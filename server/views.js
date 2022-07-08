@@ -142,6 +142,64 @@ router.get('/r/:id', (req, res) => {
     });
 });
 
+router.get('/cl/:id', (req, res) => {
+    const id = req.params.id;
+
+    if (!id) {
+        res.status(400).send('No list specified!');
+        return;
+    }
+    db.users.find({ 'library.lists.externalId': id }, (err, users) => {
+        if (err) {
+            res.status(500).send('An error occurred.');
+            return;
+        }
+        if (!users.length) {
+            res.status(400).send('Invalid list specified.');
+            return;
+        }
+        const library = new Library();
+        let list;
+
+        if (!users[0] || typeof (users[0].library) === 'undefined') {
+            logWithRequest(req, `Undefined users[0] for library with list ID ${id}`);
+            res.status(500).send('Unknown error.');
+        }
+
+        library.load(users[0].library);
+        for (const i in library.lists) {
+            if (library.lists[i].externalId && library.lists[i].externalId == id) {
+                library.defaultListId = library.lists[i].id;
+                list = library.lists[i];
+                break;
+            }
+        }
+
+        const chartData = escape(JSON.stringify(list.renderChart('total', false)));
+        const renderedCategories = renderCheckLibrary(library, {
+            itemTemplate: templates.t_itemChecklist,
+            categoryTemplate: templates.t_categoryChecklist,
+            //optionalFields: library.optionalFields,
+            //unitSelectTemplate: templates.t_unitSelect,
+            //currencySymbol: library.currencySymbol,
+        });
+
+        //const renderedTotals = renderLibraryTotals(library, templates.t_totals, templates.t_unitSelect);
+
+        let model = {
+            listName: list.name,
+            renderedCategories,
+            optionalFields: library.optionalFields,
+            renderedDescription: markdown.toHTML(list.description),
+            scripts: shareScriptsHtml,
+            styles: shareStylesHtml,
+        };
+
+        model = extend(model, templates);
+        res.send(Mustache.render(checklistTemplate, model));
+    });
+});
+
 router.get('/e/:id', (req, res) => {
     const id = req.params.id;
 
@@ -315,6 +373,15 @@ function init() {
             }
         });
 
+        fs.readFile(path.join(__dirname, '../templates/checklist.mustache'), (err, data) => {
+            if (!err) {
+                checklistTemplate = data.toString();
+                checklistTemplate = checklistTemplate.replace(/\r?\n|\r/g, '');
+            } else {
+                logger.info('ERROR reading share.mustache');
+            }
+        });
+
         fs.readFile(path.join(__dirname, '../templates/embed.mustache'), (err, data) => {
             if (!err) {
                 embedTemplate = data.toString();
@@ -360,6 +427,29 @@ const renderItem = function (item, args) {
     return Mustache.render(args.itemTemplate, out);
 };
 
+const renderCheckItem = function (item, args) {
+    let classes = '';
+    if (args.classes) classes = args.classes;
+    if (item.deleteIfEmpty) classes += ' deleteIfEmpty';
+
+    let unit = item.authorUnit;
+    if (args.unit) unit = args.unit;
+
+    //const displayWeight = weightUtils.MgToWeight(item.weight, unit);
+
+    //const displayPrice = item.price ? item.price.toFixed(2) : '0.00';
+
+    //const unitSelect = renderUnitSelect(unit, args.unitSelectTemplate, item.weight);
+
+    const starClass = item.star ? `lpStar${item.star}` : '';
+    const out = {
+        classes, unit,  showImages: args.showImages, showPrices: args.showPrices, starClass, 
+    };
+    Vue.util.extend(out, item);
+
+    return Mustache.render(args.itemTemplate, out);
+};
+
 const renderCategory = function (category, args) {
     let items = '';
     for (const i in category.categoryItems) {
@@ -380,6 +470,26 @@ const renderCategory = function (category, args) {
     return Mustache.render(args.categoryTemplate, temp);
 };
 
+const renderCheckCategory = function (category, args) {
+    let items = '';
+    for (const i in category.categoryItems) {
+        const categoryItem = category.categoryItems[i];
+        const item = category.library.getItemById(categoryItem.itemId);
+        extend(item, categoryItem);
+        items += renderCheckItem(item, args);
+    }
+
+    //category.calculateSubtotal();
+    //category.subtotalWeightDisplay = weightUtils.MgToWeight(category.subtotalWeight, args.totalUnit);
+    //category.subtotalPriceDisplay = category.subtotalPrice ? category.subtotalPrice.toFixed(2) : '0.00';
+    let temp = Vue.util.extend({}, category);
+    temp = Vue.util.extend(temp, {
+        items, 
+    });
+
+    return Mustache.render(args.categoryTemplate, temp);
+};
+
 const renderList = function (list, args) {
     args.showPrices = list.library.optionalFields.price;
     args.showImages = list.library.optionalFields.images;
@@ -391,9 +501,25 @@ const renderList = function (list, args) {
     return out;
 };
 
+const renderCheckList = function (list, args) {
+    //args.showPrices = list.library.optionalFields.price;
+    //args.showImages = list.library.optionalFields.images;
+    let out = '';
+    for (const i in list.categoryIds) {
+        const category = list.library.getCategoryById(list.categoryIds[i]);
+        if (category) out += renderCheckCategory(category, args);
+    }
+    return out;
+};
+
 var renderLibrary = function (library, args) {
     Vue.util.extend(args, { itemUnit: library.itemUnit, totalUnit: library.totalUnit });
     return renderList(library.getListById(library.defaultListId), args);
+};
+
+var renderCheckLibrary = function (library, args) {
+    //Vue.util.extend(args, { itemUnit: library.itemUnit, totalUnit: library.totalUnit });
+    return renderCheckList(library.getListById(library.defaultListId), args);
 };
 
 const renderListTotals = function (list, totalsTemplate, unitSelectTemplate, unit) {

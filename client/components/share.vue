@@ -14,6 +14,10 @@
                     <input id="shareUrl" v-select-on-bus="'show-share-box'"  v-select-on-focus type="text" :value="shareUrl">
                 </div>
                 <div class="lpField">
+                    <label for="checklistUrl">Checklist Url</label>
+                    <input id="checklistUrl" v-select-on-bus="'show-share-box'"  v-select-on-focus type="text" :value="checklistUrl">
+                </div>
+                <div class="lpField">
                     <label for="embedUrl">Embed your list</label>
                     <textarea id="embedUrl" v-select-on-focus>&lt;script src="{{ this.baseUrl }}/e/{{ this.externalId }}"&gt;&lt;/script&gt;&lt;div id="{{ this.externalId }}"&gt;&lt;/div&gt;</textarea>
                 </div>
@@ -50,6 +54,9 @@ export default {
         },
         shareUrl() {
             return `${this.baseUrl}/r/${this.externalId}`;
+        },
+        checklistUrl() {
+            return `${this.baseUrl}/cl/${this.externalId}`;
         },
         csvUrl() {
             return `${this.baseUrl}/csv/${this.externalId}`;
